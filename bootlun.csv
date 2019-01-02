@@ -1,0 +1,2 @@
+cluster,svmname,rootvol,svmaggr,nfsesxip,esxsubnet,netmask,gw,iscsiip1,iscsiip2,iscsinetmask,nfsvlan,esxvlan,ipspace
+cnamum701,mysvm,aggr_root_cnazrht0101_01_sas_01,aggr_svmaggr_cnazrht0101_02_sas_01,172.30.33.1,172.30.33.2,255.255.225.224,192.168.0.254,172.30.33.2,172.30.33.3,255.255.225.224,502,503,ipspace1

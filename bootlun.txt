@@ -1,0 +1,117 @@
+[dsingh.SAN@CESJMP03 boot_svmconfigure]$ cat boot_svm.sh
+#!/bin/bash
+echo "Type name of mgmt node1:"
+read mgmtnode1
+echo "Type name of mgmt node2:"
+read mgmtnode2
+echo "Type SVM name: "
+read svm
+echo "Type aggreate name for svm: "
+read svmaggr
+echo "Type svm root volume: "
+read svmrootvol
+echo "Type svm ipspace name: "
+read ipspace
+#
+echo "Type nfs_vlan_id: "
+read nfs_vlan_id
+echo "Type esx_vlan_id: "
+read esx_vlan_id
+echo "Type nfs_esx_ip: "
+read nfs_esx_ip
+echo "Type nfs_esx_subnet: "
+read nfs_esx_subnet
+echo "Type nfs_esx_netmask: "
+read nfs_esx_netmask
+echo "Type esx_iscsi_ip1: "
+read esx_iscsi_ip1
+echo "Type esx_iscsi_ip2: "
+read esx_iscsi_ip2
+echo "Type esx_iscsi_netmask: "
+read esx_iscsi_netmask
+#
+echo " "
+#
+echo "          # creating SVM          "
+echo "vserver create -vserver $svm  -aggregate $svmaggr -rootvolume $svmrootvol -subtype default -ipspace $ipspace  -rootvolume-security-style unix -language C.UTF-8 -ns-switch file -nm-switch file -snapshot-policy default -is-repository false"
+echo "vserver modify -vserver $svm -allowed-protocols nfs,iscsi"
+echo "vserver status"
+#
+echo " "
+#
+echo "          # creating volumes      "
+for svmvol in `cat svmvols`
+do
+echo "vol create -volume $svmvol -aggregate $svmaggr  -size 700GB -state online -type RW -junction-path "/$svmvol" -vserver $svm-space-guarantee none -snapshot-policy none  -comment '"ESX Boost on SCSI"'"
+echo "sis on -vserver $svm -volume $svmvol "
+echo "snapshot autodelete modify -volume $svmvol -vserver $svm -defer-delete none -target-free-space 15 -enabled true"
+done
+echo "                  "
+echo "vol modify -vserver $svm -volume $svmrootvol  -snapshot-policy default "
+echo "snapshot autodelete modify -volume $svmrootvol -vserver $svm -defer-delete none -target-free-space 15 -enabled true"
+#
+echo " "
+#
+echo "vserver export-policy create -policyname export_policy_01"
+echo "vserver export-policy create -policyname export_policy_02"
+#
+echo "          # Note: verify size of volumes as per LLD       "
+for svmvolinfra in `cat svminfravols`
+do
+echo "vol create -volume $svmvolinfra -aggregate $svmaggr  -size 2tb -state online -type RW -junction-path "/$svmvolinfra" -vserver $svm -snapshot-policy none -policy export_policy_01 -comment "Volume for infrastructure datastore Tier 1 - OBS VM""
+echo "snapshot autodelete modify -volume $svmvolinfra -vserver $svm -defer-delete none -target-free-space 15 -enabled true"
+echo "sis on -vserver $svm -volume $svmvolinfra "
+done
+#
+echo " "
+#
+echo "          # Creating data interface               "
+echo "network interface create -vserver $svm -lif lif_file_"$nfs_vlan_id"_01 -home-node $mgmtnode1 -home-port a0a-$nfs_vlan_id -failover-group bcast_vlan-$nfs_vlan_id -data-protocol nfs -role data -firewall-policy data  -address $nfs_esx_ip -netmask $nfs_e                             sx_netmask -status-admin up"
+echo "network interface create -vserver $svm -lif lif_file_"$esx_vlan_id"_01 -home-node $mgmtnode1 -home-port a0a-$esx_vlan_id -data-protocol iscsi -role data -firewall-policy data  -address $esx_iscsi_ip1 -netmask $esx_iscsi_netmask -status-admin up"
+echo "network interface create -vserver $svm -lif lif_file_"$esx_vlan_id"_02 -home-node $mgmtnode2 -home-port a0a-$esx_vlan_id -data-protocol iscsi -role data -firewall-policy data  -address $esx_iscsi_ip2 -netmask $esx_iscsi_netmask -status-admin up"
+#
+echo " "
+#
+echo "          # Export Policy                 "
+echo "vserver export-policy rule create -vserver $svm -policyname export_policy_01 -ruleindex 1 -protocol any -clientmatch $nfs_esx_subnet"/27" -rorule sys -rwrule none -superuser sys"
+echo "vserver export-policy rule create -vserver $svm -policyname export_policy_02 -ruleindex 2 -protocol any -clientmatch $nfs_esx_subnet"/27" -rorule sys -rwrule sys -superuser sys"
+echo "vserver nfs create -vserver $svm -access true"
+#
+echo " "
+#
+echo "          # Qtree Creation & Export Policy        "
+for qtrevol in `cat svmvols`
+do
+echo "qtree create  -vserver $svm -volume $qtrevol   -qtree qt01 -security-style unix"
+done
+echo " "
+for qtrevol1 in `cat svminfravols`
+do
+echo "qtree create  -vserver $svm -volume $qtrevol1   -qtree qt01 -security-style unix  -export-policy export_policy_02"
+done
+echo "  "
+for qtrevol1 in `cat svminfravols`
+do
+echo "vol modify -volume $qtrevol1 -policy export_policy_01"
+echo "qtree modify -vserver $svm -volume $qtrevol1 -qtree qt01  -export-policy  export_policy_02"
+done
+echo "                  "
+echo "vol modify -vserver $svm -volume $svmrootvol -policy export_policy_01"
+#for datastore in 'head -1 svmvols'
+#do
+#echo "vol modify -vserver $svm -volume $datastore -policy export_policy_01"
+#echo "qtree modify -vserver $svm -volume $datastore -qtree qt01  -export-policy  export_policy_02"
+#done
+#
+echo " "
+#
+echo "          # Lun creation                          "
+for lun in `cat svmvols`
+do
+echo "lun create -vserver $svm -path /vol/$lun/qt01/lun01.lun -size 16G -ostype vmware"
+echo "lun modify -vserver $svm -path /vol/$lun/qt01/lun01.lun -space-reserve disabled"
+done
+#
+#
+echo "iscsi create -target-alias $svm -status-admin up "
+echo " ============= =============== End of Commands =================  ============================= "
